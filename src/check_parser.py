@@ -1,7 +1,10 @@
 """Check parse_reports.py against train labels: every diagnosis field, plus organ/sex/age/year/pT/pN.
 Usage: python3 check_parser.py data/train.jsonl"""
 import json, sys, collections
-from parse_reports import parse_report, derive
+if __package__:
+    from .parse_reports import parse_report, derive
+else:
+    from parse_reports import parse_report, derive
 
 errs = collections.Counter(); examples = {}
 n = 0
@@ -21,3 +24,4 @@ if not errs:
     print("ALL FIELDS MATCH LABELS EXACTLY")
 for k, c in errs.most_common():
     print(f"  {k}: {c} mismatches  e.g. {examples[k]}")
+

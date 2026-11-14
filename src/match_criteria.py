@@ -22,7 +22,8 @@ def negative(value):
 
 
 def field(row, name):
-    return str(row.get(name, "") or "").strip().lower()
+    value = row.get(name)
+    return '' if value is None else str(value).strip().lower()
 
 
 def has(row, name, phrase):
@@ -183,14 +184,12 @@ def match(row, criterion):
         )
 
     if criterion == "c15":
+        bronchial = re.search(r'bronchial margin\s+([^;]+)', margins)
         return (
             organ == "lung"
             and "squamous cell carcinoma" in histology
-            and "bronchial" in margins
-            and (
-                "involved" in margins
-                or "positive" in margins
-            )
+            and bronchial is not None
+            and bool(re.match(r'(?:involved|positive)\b', bronchial.group(1)))
         )
 
     if criterion == "c16":
@@ -209,7 +208,7 @@ def match(row, criterion):
         return (
             organ == "prostate"
             and grade_group is not None
-            and grade_group >= 4
+            and grade_group in (4, 5)
         )
 
     # FIXED: Values include "present, left",
@@ -332,11 +331,13 @@ def match(row, criterion):
     # ==========================================
 
     if criterion == "c29":
+        age = number(row.get('age_min'))
+        if age is None:
+            m = re.match(r'(\d+)',age_band)
+            age = float(m.group(1)) if m else None
         return (
             organ == "colon"
-            and age_band in {
-                "70-79", "80-89", "90-99", "100+"
-            }
+            and age is not None and age >= 70
             and nodes is not None
             and nodes >= 1
         )
@@ -348,7 +349,7 @@ def match(row, criterion):
             and field(row, "report_year") in {"2023", "2024"}
         )
 
-    return False
+    raise ValueError('Unsupported criterion: '+str(criterion))
 
 
 def main():
@@ -386,3 +387,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -1,7 +1,11 @@
 """List distinct values per (organ, field) in train, with counts -> out/field_values.md.
 Long free-text fields are shown as their top values only. Usage: python3 field_values.py data/train.jsonl"""
 import sys, collections, re
-from parse_reports import load
+from pathlib import Path
+if __package__:
+    from .parse_reports import load
+else:
+    from parse_reports import load
 recs = load(sys.argv[1])
 by = collections.defaultdict(collections.Counter)
 for r in recs:
@@ -9,7 +13,8 @@ for r in recs:
         if k == "Specimen": continue
         # collapse numbers so "9 mm" / "12 mm" group together
         by[(r["organ"], k)][re.sub(r"\d+(\.\d+)?", "#", v)] += 1
-with open("out/field_values.md", "w") as f:
+Path("out").mkdir(parents=True, exist_ok=True)
+with open("out/field_values.md", "w", encoding="utf-8") as f:
     f.write("# Distinct field values in train (numbers shown as #)\n")
     for organ in sorted({o for o, _ in by}):
         f.write(f"\n## {organ}\n")
@@ -19,3 +24,4 @@ with open("out/field_values.md", "w") as f:
             for v, n in c.most_common(12):
                 f.write(f"- `{v}` — {n}\n")
 print("wrote out/field_values.md")
+

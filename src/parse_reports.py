@@ -11,6 +11,7 @@ Also derives typed columns (sizes in mm, node counts, ER/PR/HER2, Gleason, ...)
 that the criterion filters use.
 """
 import csv, json, re, sys
+from pathlib import Path
 
 # Every field name listed in the README, across all organs.
 FIELDS = """Specimen; Diagnosis; Margins; Tumor size; Aggressive growth pattern; Ulceration;
@@ -30,8 +31,9 @@ FIELDS = [f.strip() for f in FIELDS.replace("\n", " ").split(";") if f.strip()]
 # Longest first so "Pathologic stage (AJCC 8th ed.)" wins over "Pathologic stage".
 FIELDS.sort(key=len, reverse=True)
 FIELD_RE = "|".join(re.escape(f) for f in FIELDS)
-STARTS_FIELD = re.compile(rf"^(?:{FIELD_RE}):\s*")
-SPLIT_ONELINE = re.compile(rf";\s+(?=(?:{FIELD_RE}):)")
+STARTS_FIELD = re.compile(rf"^(?:{FIELD_RE}):\s*", re.I)
+SPLIT_ONELINE = re.compile(rf";\s*(?=(?:{FIELD_RE}):)", re.I)
+CANONICAL_FIELDS = {f.lower(): f for f in FIELDS}
 
 ORGAN_FROM_SPECIMEN = [("lung", "lung"), ("skin", "skin"), ("breast", "breast"), ("prostate", "prostate"),
                        ("stomach", "stomach"), ("colon", "colon"), ("kidney", "kidney")]
@@ -54,12 +56,13 @@ def parse_block(block):
             text = text[:-1]
         pieces = SPLIT_ONELINE.split(text)
     else:
-        pieces = lines
+        pieces = [piece for line in lines for piece in SPLIT_ONELINE.split(line)]
     out = {}
     for p in pieces:
         m = STARTS_FIELD.match(p)
         if m:
             name = p[: m.end()].rstrip().rstrip(":").rstrip()
+            name = CANONICAL_FIELDS[name.lower()]
             out[name] = p[m.end():].strip()
         else:  # unlabeled line = the skin diagnosis
             out["Diagnosis"] = (out["Diagnosis"] + "; " + p) if "Diagnosis" in out else p
@@ -68,8 +71,12 @@ def parse_block(block):
 
 def parse_report(text):
     head = re.search(r"Patient:\s*(\w+), age band ([^|]+?)\s*\|\s*Report year:\s*(\d{4})", text)
-    spec = re.search(r"SPECIMEN:\s*(.*)", text).group(1).strip()
-    fd = re.search(r"FINAL DIAGNOSIS:(.*?)(?:\n\s*\n|GROSS DESCRIPTION:|$)", text, re.S).group(1)
+    spec_match = re.search(r"SPECIMEN:[ \t]*([^\n]+)", text)
+    fd_match = re.search(r"FINAL DIAGNOSIS:(.*?)(?:\n\s*\n|GROSS DESCRIPTION:|$)", text, re.S)
+    if not head or not spec_match or not fd_match:
+        raise ValueError('Report must contain Patient header, SPECIMEN, and FINAL DIAGNOSIS')
+    spec = spec_match.group(1).strip()
+    fd = fd_match.group(1)
     diag = {"Specimen": spec}
     diag.update(parse_block(fd))
     return {
@@ -82,11 +89,11 @@ def parse_report(text):
 def size_mm(v):
     if not v:
         return None
-    m = re.search(r"(\d+(?:\.\d+)?)\s*(mm|cm)\b", v)
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(mm|cm)\b", v, re.I)
     if not m:
         return None
     x = float(m.group(1))
-    return x * 10 if m.group(2) == "cm" else x
+    return x * 10 if m.group(2).lower() == "cm" else x
 
 
 def present(v):
@@ -114,7 +121,7 @@ def marker(bio, name):
     """'positive' / 'negative' / 'equivocal' / None for ER, PR, HER2 inside a Biomarkers or HER2 field."""
     if not bio:
         return None
-    m = re.search(rf"\b{name}\b\s+(positive|negative|equivocal|low)", bio, re.I)
+    m = re.search(rf"\b{name}\b\s*[:=]?\s*(positive|negative|equivocal|low)", bio, re.I)
     return m.group(1).lower() if m else None
 
 
@@ -151,9 +158,13 @@ def derive(rec):
 
 def load(path):
     out = []
-    for line in open(path):
+    seen = set()
+    for line in Path(path).read_text(encoding='utf-8').splitlines():
         if line.strip():
             r = json.loads(line)
+            if r['id'] in seen:
+                raise ValueError('Duplicate report ID: '+r['id'])
+            seen.add(r['id'])
             rec = parse_report(r["report_text"])
             rec["id"] = r["id"]
             rec["row"] = derive(rec)
@@ -164,8 +175,11 @@ def load(path):
 def main(inp, outp):
     recs = load(inp)
     fields = sorted({k for r in recs for k in r["diagnosis"]})
+    if not recs:
+        raise ValueError('No reports found')
     derived = list(recs[0]["row"].keys())
-    with open(outp, "w", newline="") as f:
+    Path(outp).parent.mkdir(parents=True, exist_ok=True)
+    with open(outp, "w", newline="", encoding='utf-8') as f:
         w = csv.writer(f)
         w.writerow(["id"] + derived + ["dx:" + k for k in fields])
         for r in recs:
@@ -175,3 +189,4 @@ def main(inp, outp):
 
 if __name__ == "__main__":
     main(*sys.argv[1:3])
+
