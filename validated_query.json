@@ -1,0 +1,30 @@
+{
+  "name": "Validated custom cohort: c01 AND c04",
+  "all": [
+    {
+      "field": "organ",
+      "op": "eq",
+      "value": "breast"
+    },
+    {
+      "field": "HER2",
+      "op": "eq",
+      "value": "negative"
+    },
+    {
+      "field": "nodes_positive",
+      "op": "ge",
+      "value": 1
+    },
+    {
+      "field": "size_mm",
+      "op": "gt",
+      "value": 20
+    },
+    {
+      "field": "lvi",
+      "op": "eq",
+      "value": true
+    }
+  ]
+}

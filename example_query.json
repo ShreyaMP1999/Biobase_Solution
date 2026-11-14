@@ -1,0 +1,9 @@
+{
+  "name": "Breast cohort: HER2 negative, node positive, tumor over 20 mm",
+  "all": [
+    {"field": "organ", "op": "eq", "value": "breast"},
+    {"field": "HER2", "op": "eq", "value": "negative"},
+    {"field": "nodes_positive", "op": "ge", "value": 1},
+    {"field": "size_mm", "op": "gt", "value": 20}
+  ]
+}
