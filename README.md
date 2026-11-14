@@ -1,137 +1,123 @@
-
 # Eligibility Lens
 
-A rule-based patient eligibility matching system developed for the Biobase "Find the Right Patients" challenge at the DNAForge AI x Biology Hackathon, Berkeley, November 2026.
+Explainable pathology report search for the Biobase "Find the Right Patients" challenge, DNAForge AI x Biology Hackathon, November 2026.
 
-## Overview
+The project supports **criteria search** and **our own idea: an explainable cohort explorer**. Both use the same report parser and matching pipeline. Slide organ labeling and similar-slide retrieval are not implemented; those require a separate image dataset and pipeline.
 
-Eligibility Lens identifies pathology reports that satisfy clinical eligibility criteria.
+## Quick start
 
-The system extracts structured information from synthetic pathology reports and applies predefined matching rules to identify eligible patient records.
+Use Python 3.10 or newer. No extra packages, API keys, GPU, or paid model are required.
 
-## Dataset
-
-The challenge provides synthetic pathology reports in JSONL format.
-
-- Training reports: 9,010
-- Test reports: 979
-- Eligibility criteria: 30
-
-The dataset includes information such as cancer type, histology, tumor size, lymph node involvement, pathological stage, biomarkers, and surgical margins.
-
-The source data is excluded from this repository in accordance with the challenge's data-access restrictions.
-
-## Methodology
-
-The system follows four steps:
-
-1. Parse pathology reports and extract relevant clinical information.
-2. Convert extracted information into structured records.
-3. Apply rule-based eligibility criteria to each record.
-4. Generate matching report IDs for each criterion.
-
-The matching engine handles clinical details such as biomarker status, tumor measurements, lymph node involvement, pathological staging, and negation.
-
-## Project Structure
+Clone this repository and run commands from its root. Obtain the authorized challenge files separately and place them under `data/` with these names:
 
 ```text
-Eligibility-lens/
-├── data/                 # Challenge data (not tracked)
-├── out/                  # Generated outputs (not tracked)
-├── src/
-│   ├── baseline_keyword.py
-│   ├── check_parser.py
-│   ├── evaluate.py
-│   ├── field_values.py
-│   ├── generate_submission.py
-│   ├── match_criteria.py
-│   ├── parse_reports.py
-│   └── score.py
-├── tests/
-├── .gitignore
-├── README.md
-├── README_parser.md
-└── requirements.txt
+data/
+  train.jsonl
+  test.jsonl
+  criteria.json
+  criteria_train_answers.json
+  submission_template_criteria.json  # optional
 ```
+
+Source challenge files and generated report IDs are deliberately excluded from Git. Do not commit them. Input filenames with download suffixes such as `train(2).jsonl` can be passed explicitly with `--reports`, or renamed locally.
+
+### Criteria search
+
+```bash
+python3 run.py predict --reports data/test.jsonl --out out/submission_criteria.json
+```
+
+This processes raw JSONL directly. A parsed CSV and the optional submission template are not prerequisites. To validate an available template, add `--template data/submission_template_criteria.json`.
+
+Outputs:
+
+- `out/submission_criteria.json`: submit this file for criteria search, containing all 30 criterion IDs and matching test report IDs.
+- `out/submission_criteria.audit.json`: extracted facts, matched criteria, and source diagnosis text for review. This is not the submission file.
+
+The system implements the supplied 30 fixed criteria, not arbitrary natural-language rules. The supplied criteria file is validated against a fingerprint to reject unsupported changes without publishing its text here. Training labels are never consulted during prediction.
+
+### Our own idea: explainable cohort explorer
+
+```bash
+python3 run.py cohort --reports data/test.jsonl --query example_query.json --out out/cohort.json
+```
+
+Open `out/cohort.html` locally in your browser. Search IDs or evidence, filter results, and expand a report to view each condition, its observed value, and source diagnosis text. The page works offline.
+
+The example looks for breast reports with HER2 negative, at least one positive lymph node, and tumor size greater than 20 mm. It finds 5 exact matches in the supplied test set.
+
+| Status | Meaning |
+|---|---|
+| Match | All filters pass |
+| Review | No filter fails, but one or more required facts are missing |
+| Excluded | At least one filter fails |
+
+Edit `example_query.json` to create a different cohort. Its `all` array combines conditions with AND. Supported operators are `eq`, `ne`, `gt`, `ge`, `lt`, `le`, `contains`, and `in`. Operators and values must match the field type. Missing information never counts as a negative finding or an exact match. Sorting by passed filters is not an eligibility probability.
+
+Useful fields: `organ`, `age_min`, `sex`, `year`, `histology`, `size_mm`, `nodes_positive`, `pT`, `pN`, `ER`, `PR`, `HER2`, `lvi`, `pni`, `nottingham`, `isup`, `grade_group`, `multifocal`, `pleural`, `svi`, `epe`, `sarcomatoid`, `deposits`, and margin fields. See `src/engine.py` for the complete schema. `age_min` is a band lower bound, not an exact age; use band-aligned filters such as >=70 or <60. Text equality is case-sensitive; organ and histology values are lowercase and marker values are `positive`, `negative`, or `equivocal`.
 
 ## Evaluation
 
-The matching engine was evaluated against the provided training answer key.
+```bash
+python3 run.py evaluate --reports data/train.jsonl --answers data/criteria_train_answers.json --split all --out out/full_train.json
+python3 run.py evaluate --reports data/train.jsonl --answers data/criteria_train_answers.json --split validation --out out/validation.json
+python3 -m src.evaluate_cohort
+```
 
-| Metric | Training Result |
-|--------|-----------------|
-| Precision (macro) | 1.0000 |
-| Recall (macro) | 1.0000 |
-| F1 Score (macro) | 1.0000 |
+Evaluation saves a JSON summary, per-criterion precision/recall/F1, error IDs, count errors, and a metrics CSV. It also runs the supplied keyword baseline on the same reports. The cohort evaluation compares `validated_query.json` with the intersection of c01 and c04 training answers, which represents the same AND condition. For another query, the reference criteria must represent that query exactly.
 
-All 30 criteria matched the provided training labels after rule refinement.
+Measured on the supplied data after integration:
 
-These results represent agreement with the training answers and should not be interpreted as independent test-set performance.
+| Evaluation | Reports | Rule mean F1 | Keyword mean F1 |
+|---|---:|---:|---:|
+| Full training set | 9,010 | 1.000000 | 0.284756 |
+| Internal validation subset | 1,811 | 1.000000 | 0.259695 |
 
-## Test Predictions
+The custom cohort also scores F1 1.0 on the internal validation subset. Test predictions process 979 reports and contain 608 criterion/report matches, exactly matching the earlier solution. **Test F1 remains unknown until compared with the official test answers.**
 
-The finalized matching engine was applied to 979 held-out pathology reports.
+The internal split uses SHA256(report ID) modulo 5: zero selects validation, the rest selects development. IDs determine only the split and output, never clinical features. These fixed rules were refined against supplied training data, including your collaborator's full-training work, so this split is not an independent blind evaluation of the combined project. Both subsets share a synthetic generator.
 
-- Reports processed: 979
-- Criteria evaluated: 30
-- Criterion-report matches generated: 608
+F1 per criterion is `2 * TP / (2 * TP + FP + FN)`. The headline score averages all 30 criteria. A skipped or count-only criterion gets zero F1. The local scorer uses zero when both ID sets are empty; this convention does not affect the reported evaluations, where all 30 criteria have positives. Count error is undefined when the true count is zero and is saved as null.
 
-The predictions are stored in `out/submission_criteria.json`.
+## Implementation
 
-The held-out F1 score requires evaluation against the official test answer key.
+- `src/parse_reports.py`: the team's shared parser for both final diagnosis layouts, typed sizes, node counts, biomarkers, and demographics.
+- `src/match_criteria.py`: the team's 30 explicit matching rules.
+- `src/engine.py`: connects parsed facts to matching rules and cohort features, with audit evidence.
+- `src/pipeline.py`: unified prediction, evaluation, and cohort commands.
+- `src/generate_submission.py`, `src/evaluate.py`: compatibility commands; now process raw JSONL automatically.
+- `src/evaluate_cohort.py`: evaluates the custom cohort against known training-answer intersections.
+- `src/score.py`: scores an existing prediction file, including count-only submissions.
+- `tests/`: synthetic regression fixtures that do not need restricted data.
+- `.github/workflows/tests.yml`: Python 3.10 and 3.13 CI.
 
-## Running the Project
+The parser separates known field headings rather than every semicolon, keeps margin/biomarker values intact, normalizes cm to mm, and uses the primary specimen organ. Matching reads final diagnosis facts rather than unrelated measurements in gross prose.
 
-Install dependencies:
+Criterion c08 follows the supplied training answer key's stage III interpretation: colon pN1c is included even with zero positive lymph nodes. Criteria c11 and c29 use the literal positive-node count. The rules also handle 90+ age bands and require bronchial margin involvement specifically for c15.
+
+## Additional commands
 
 ```bash
-pip install -r requirements.txt
+python3 src/generate_submission.py
+python3 src/evaluate.py
+python3 src/parse_reports.py data/train.jsonl out/train_table.csv
+python3 src/parse_reports.py data/test.jsonl out/test_table.csv
+python3 src/check_parser.py data/train.jsonl
+python3 src/field_values.py data/train.jsonl
+python3 src/score.py out/submission_criteria.json path/to/correct_test_answers.json data/criteria.json
+python3 -m unittest discover -s tests -v
 ```
 
-Generate the structured report tables using the parser, then evaluate the training predictions:
+The parser check matches all 9,010 training reports exactly against their structured labels. Those labels are used only for this check. The 18 regression tests cover negatives, missing fields, size boundaries, internal semicolons, mixed layouts, organ selection, 90+ ages, specific margins, preservation of native boolean values, cohort output, HTML escaping, and F1 arithmetic.
 
-```bash
-python src/evaluate.py
-```
+## Limitations and next steps
 
-Generate test predictions:
+This is a synthetic-data hackathon prototype, not a clinical decision tool. Fixed criteria and custom AND filters do not interpret arbitrary clinical questions. Unseen report formats, complex mixed margins, and unsupported concepts require additional extraction rules and an untouched evaluation set. The reports do not correspond to the challenge slides.
 
-```bash
-python src/generate_submission.py
-```
-
-## Output Format
-
-The submission is a JSON object mapping each criterion ID to the matching pathology report IDs.
-
-Example:
-
-```json
-{
-  "c01": ["SYN-example001"],
-  "c02": ["SYN-example002"],
-  "c03": []
-}
-```
-
-The IDs above are illustrative.
-
-## Limitations
-
-- The system implements 30 predefined eligibility rules.
-- It does not automatically interpret arbitrary new natural-language criteria.
-- Training performance may not reflect performance on unseen reports.
-- The dataset is synthetic and is not clinically validated.
-- The system is a research prototype, not a clinical decision-making tool.
+For a future natural-language interface, compile questions into the validated filter schema and reject unsupported concepts. For slide tasks, build a separate image embedding and classification pipeline after obtaining the authorized slide files.
 
 ## Team
 
-Team T15 — DNAForge AI x Biology Hackathon
+Team T15: Vaishnavi Kosuru, Tia RaoRane, and Shreya Padaganur.
 
-- Vaishnavi Kosuru
-- Tia RaoRane
-- Shreya Padaganur
-
-## Acknowledgments
-
-Biobase and the DNAForge AI x Biology Hackathon organizers for providing the challenge and research environment.
+This combined implementation preserves the team's parser and matching work and integrates the explainable cohort explorer, shared command line, regression tests, and reproducible evaluation. Thanks to Biobase and the DNAForge AI x Biology Hackathon organizers.
