@@ -81,9 +81,12 @@ def cohort_html(rows,path,title):
 def main(argv=None):
     ap=argparse.ArgumentParser(); sub=ap.add_subparsers(dest='command',required=True)
     for name in ['predict','evaluate','cohort']:
-        p=sub.add_parser(name);p.add_argument('--reports',required=True);p.add_argument('--out',required=True)
+        p=sub.add_parser(name);p.add_argument('--reports',required=True)
+        p.add_argument('--out',default='submissions/submission_criteria.json' if name=='predict' else None,required=name!='predict')
         if name in ['predict','evaluate']:p.add_argument('--criteria',default='data/criteria.json')
-        if name=='predict':p.add_argument('--template',help='Optional official submission template to validate')
+        if name=='predict':
+            p.add_argument('--template',help='Optional official submission template to validate')
+            p.add_argument('--audit-out',help='Audit JSON path (default: out/<submission stem>.audit.json)')
         if name=='evaluate':
             p.add_argument('--answers',required=True);p.add_argument('--split',choices=['all','development','validation'],default='validation')
         if name=='cohort':p.add_argument('--query',required=True)
@@ -102,7 +105,13 @@ def main(argv=None):
         validate_template(load(a.template))
     pred,audit=predict(rs)
     if a.command=='predict':
-        save(a.out,pred);save(str(Path(a.out).with_suffix('.audit.json')),audit)
+        from .validation import validate_submission
+        validate_submission(pred,{r['id'] for r in rs})
+        audit_path=Path(a.audit_out) if a.audit_out else Path('out')/(Path(a.out).stem+'.audit.json')
+        if audit_path.resolve()==Path(a.out).resolve():
+            raise ValueError('Submission and audit paths must be different')
+        save(a.out,pred);save(audit_path,audit)
+        print('Submission:',a.out);print('Audit:',audit_path)
         print('Wrote all 30 criteria; matching IDs:',sum(map(len,pred.values())))
     else:
         gold=load(a.answers);ids={r['id'] for r in rs}
@@ -116,3 +125,4 @@ def main(argv=None):
     print('Seconds:',round(time.perf_counter()-t,3))
 
 if __name__=='__main__':main()
+

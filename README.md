@@ -24,14 +24,16 @@ Source challenge files and generated report IDs are deliberately excluded from G
 ### Criteria search
 
 ```bash
-python3 run.py predict --reports data/test.jsonl --out out/submission_criteria.json
+python3 run.py predict --reports data/test.jsonl
 ```
 
 This processes raw JSONL directly. A parsed CSV and the optional submission template are not prerequisites. To validate an available template, add `--template data/submission_template_criteria.json`.
 
+The command creates the new `submissions/` folder automatically. Use `--out` to choose another submission path, or `--audit-out` to choose an audit path. The audit stays under `out/` by default, so the submission folder contains only the file to upload.
+
 Outputs:
 
-- `out/submission_criteria.json`: submit this file for criteria search, containing all 30 criterion IDs and matching test report IDs.
+- `submissions/submission_criteria.json`: submit this file for criteria search, containing exactly the template keys `c01` through `c30`, each mapped to a list of matching test report ID strings. Empty results remain `[]`. The output is checked for unknown or duplicate report IDs before saving.
 - `out/submission_criteria.audit.json`: extracted facts, matched criteria, and source diagnosis text for review. This is not the submission file.
 
 The system implements the supplied 30 fixed criteria, not arbitrary natural-language rules. The supplied criteria file is validated against a fingerprint to reject unsupported changes without publishing its text here. Training labels are never consulted during prediction.
@@ -104,7 +106,7 @@ python3 src/parse_reports.py data/train.jsonl out/train_table.csv
 python3 src/parse_reports.py data/test.jsonl out/test_table.csv
 python3 src/check_parser.py data/train.jsonl
 python3 src/field_values.py data/train.jsonl
-python3 src/score.py out/submission_criteria.json path/to/correct_test_answers.json data/criteria.json
+python3 src/score.py submissions/submission_criteria.json path/to/correct_test_answers.json data/criteria.json
 python3 -m unittest discover -s tests -v
 ```
 
@@ -121,3 +123,4 @@ For a future natural-language interface, compile questions into the validated fi
 Team T15: Vaishnavi Kosuru, Tia RaoRane, and Shreya Padaganur.
 
 This combined implementation preserves the team's parser and matching work and integrates the explainable cohort explorer, shared command line, regression tests, and reproducible evaluation. Thanks to Biobase and the DNAForge AI x Biology Hackathon organizers.
+

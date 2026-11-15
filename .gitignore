@@ -4,6 +4,7 @@ data/
 
 # Generated files and local results
 out/
+submissions/*.json
 
 # Python environments
 .venv/
@@ -32,3 +33,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
